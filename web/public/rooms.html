@@ -15,6 +15,7 @@
       <div class="sub">浏览所有直播房间</div>
     </div>
     <div class="actions">
+      <div id="authArea" class="auth"></div>
       <button id="createRoomBtn" class="btn small">+ 创建房间</button>
     </div>
   </header>
@@ -89,18 +90,56 @@
     createRoomBtn.onclick = () => { createModal.style.display = 'flex'; };
     cancelBtn.onclick = () => { createModal.style.display = 'none'; };
 
+    // auth helpers
+    const authArea = document.getElementById('authArea');
+    function updateAuthUI() {
+      const token = localStorage.getItem('token');
+      const username = localStorage.getItem('username');
+      if (token && username) {
+        authArea.innerHTML = `<span class="muted">${username}</span> <button id="logoutBtn" class="btn small outline">退出</button>`;
+        document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token'); localStorage.removeItem('username'); updateAuthUI(); };
+      } else {
+        authArea.innerHTML = `<button id="loginBtn" class="btn small">登录</button>`;
+        document.getElementById('loginBtn').onclick = doLogin;
+      }
+    }
+
+    async function doLogin() {
+      const name = prompt('请输入用户名 (示例: alice)');
+      if (!name) return;
+      try {
+        const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: name }) });
+        if (!res.ok) throw new Error('login failed');
+        const j = await res.json();
+        localStorage.setItem('token', j.token);
+        localStorage.setItem('username', j.username);
+        updateAuthUI();
+      } catch (err) { alert('登录失败'); console.error(err); }
+    }
+
+    updateAuthUI();
+
     confirmBtn.onclick = async () => {
       const id = newRoomId.value.trim();
       const name = newRoomName.value.trim();
       if (!id || !name) { alert('请输入房间 ID 和名称'); return; }
 
+      const token = localStorage.getItem('token');
+      if (!token) {
+        if (!confirm('创建房间需要登录，是否现在登录？')) return;
+        await doLogin();
+      }
+
       try {
         const res = await fetch('/api/rooms', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
           body: JSON.stringify({ id, name })
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(txt || 'create failed');
+        }
         createModal.style.display = 'none';
         newRoomId.value = '';
         newRoomName.value = '';

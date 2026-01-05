@@ -53,6 +53,14 @@ jobs:
         run: npm run test:moderation
         working-directory: ./web
 
+      - name: Run moderation actions e2e test
+        run: npm run test:moderation-actions
+        working-directory: ./web
+
+      - name: Run create room e2e test
+        run: npm run test:create-room
+        working-directory: ./web
+
       - name: Run prefs e2e test
         run: npm run test:prefs
         working-directory: ./web
