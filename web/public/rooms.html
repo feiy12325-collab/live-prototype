@@ -65,8 +65,11 @@
         rooms.forEach(room => {
           const card = document.createElement('div');
           card.className = 'room-card';
+          const coverStyle = typeof room.cover === 'string' && room.cover.includes('hsl') 
+            ? `style="background: ${room.cover}"` 
+            : `style="background-image: url('${room.cover || ''}'); background-size: cover; background-position: center;"`;
           card.innerHTML = `
-            <div class="room-thumb" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)">
+            <div class="room-thumb" ${coverStyle}>
               <div class="status-badge ${room.status}">
                 <span>${room.status === 'live' ? '🔴 直播中' : '⭕ 离线'}</span>
               </div>

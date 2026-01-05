@@ -16,10 +16,18 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 // 模拟房间数据库
 const rooms = new Map();
 
+// 默认封面生成（简单渐变色 URL）
+function generateDefaultCover(roomId) {
+  const hues = [240, 280, 320, 20, 60, 100, 140, 180];
+  const hash = roomId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const hue = hues[hash % hues.length];
+  return `linear-gradient(135deg, hsl(${hue}, 80%, 50%), hsl(${hue + 40}, 80%, 60%))`;
+}
+
 // 初始化示例房间
-rooms.set('stream1', { id: 'stream1', name: '主播直播间', viewers: 42, status: 'live', created: new Date() });
-rooms.set('stream2', { id: 'stream2', name: '教学直播', viewers: 18, status: 'live', created: new Date() });
-rooms.set('stream3', { id: 'stream3', name: '游戏直播', viewers: 0, status: 'offline', created: new Date() });
+rooms.set('stream1', { id: 'stream1', name: '主播直播间', viewers: 42, status: 'live', created: new Date(), cover: generateDefaultCover('stream1') });
+rooms.set('stream2', { id: 'stream2', name: '教学直播', viewers: 18, status: 'live', created: new Date(), cover: generateDefaultCover('stream2') });
+rooms.set('stream3', { id: 'stream3', name: '游戏直播', viewers: 0, status: 'offline', created: new Date(), cover: generateDefaultCover('stream3') });
 
 // Authentication helpers
 function signToken(payload) {
@@ -135,7 +143,7 @@ app.post('/api/rooms', authRequired, (req, res) => {
   const { id, name } = req.body;
   if (!id || !name) return res.status(400).json({ error: 'id and name required' });
   if (rooms.has(id)) return res.status(409).json({ error: 'Room already exists' });
-  const room = { id, name, viewers: 0, status: 'offline', created: new Date(), owner: req.user.username };
+  const room = { id, name, viewers: 0, status: 'offline', created: new Date(), owner: req.user.username, cover: generateDefaultCover(id) };
   rooms.set(id, room);
   res.json(room);
 });
@@ -426,6 +434,19 @@ const io = new Server(server);
 
       return res.status(400).json({ error: 'unknown action' });
     } catch (err) { console.error(err); res.status(500).json({ error: 'internal' }); }
+  });
+
+  // Room cover API: update cover
+  app.patch('/api/rooms/:id/cover', authRequired, (req, res) => {
+    const room = rooms.get(req.params.id);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    if (room.owner && req.user.username !== room.owner && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { cover } = req.body;
+    if (!cover) return res.status(400).json({ error: 'cover required' });
+    room.cover = cover;
+    res.json({ cover });
   });
 
   } catch (err) {

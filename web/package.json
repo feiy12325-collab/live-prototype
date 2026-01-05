@@ -8,9 +8,8 @@
     "test:moderation": "node test/e2e-moderation.js",
     "test:moderation-actions": "node test/e2e-moderation-actions.js",
     "test:prefs": "node test/prefs-e2e.js",
-    "test:all": "npm run test:e2e-chat && npm run test:moderation && npm run test:moderation-actions && npm run test:create-room && npm run test:prefs",
-    "test:create-room": "node test/e2e-create-room.js"
-  },
+    "test:all": "npm run test:e2e-chat && npm run test:moderation && npm run test:moderation-actions && npm run test:create-room && npm run test:room-cover && npm run test:prefs",
+    "test:create-room": "node test/e2e-create-room.js"    "test:room-cover": "node test/e2e-room-cover.js",  },
   "dependencies": {
     "@socket.io/redis-adapter": "^7.0.0",
     "axios": "^1.13.2",
