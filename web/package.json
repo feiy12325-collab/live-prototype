@@ -6,7 +6,7 @@
     "start": "node index.js",
     "test:e2e-chat": "node test/e2e-chat.js",
     "test:prefs": "node test/prefs-e2e.js",
-    "test:all": "npm run test:e2e-chat && npm run test:prefs"
+    "test:all": "npm run test:e2e-chat && npm run test:moderation && npm run test:prefs"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^7.0.0",

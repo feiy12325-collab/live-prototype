@@ -194,6 +194,56 @@ const io = new Server(server);
       }
     }
 
+    // Moderation helpers
+    async function getModerationList() {
+      try {
+        const c = createClient({ url: REDIS_URL });
+        await c.connect();
+        const raw = await c.get('moderation:banned');
+        await c.quit();
+        return raw ? JSON.parse(raw) : ['badword', 'spamword'];
+      } catch (err) {
+        console.error('Failed to get moderation list', err);
+        return ['badword', 'spamword'];
+      }
+    }
+
+    async function setModerationList(list) {
+      try {
+        const c = createClient({ url: REDIS_URL });
+        await c.connect();
+        await c.set('moderation:banned', JSON.stringify(list || []));
+        await c.quit();
+        return true;
+      } catch (err) {
+        console.error('Failed to set moderation list', err);
+        return false;
+      }
+    }
+
+    function containsBannedText(text, bannedList) {
+      if (!text) return false;
+      const lowered = String(text).toLowerCase();
+      for (const b of bannedList) {
+        if (!b) continue;
+        const pattern = b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`\\b${pattern}\\b`, 'i');
+        if (re.test(lowered)) return true;
+      }
+      return false;
+    }
+
+    async function flagMessage(roomId, payload, reason = 'banned') {
+      const key = `mod:${roomId}`;
+      try {
+        await redisClient.rPush(key, JSON.stringify({ ...payload, reason }));
+        // keep last 500 flagged entries
+        await redisClient.lTrim(key, -500, -1);
+      } catch (err) {
+        console.error('Failed to flag message', err);
+      }
+    }
+
     // middleware: if token is provided, verify and attach user to socket
     io.use((socket, next) => {
       const token = socket.handshake && socket.handshake.auth && socket.handshake.auth.token;
@@ -223,6 +273,12 @@ const io = new Server(server);
         // send recent chat history to this client
         const recent = await loadMessages(roomId, 100);
         socket.emit('chatHistory', recent);
+
+        // send moderation stats (counts of flagged messages) for room (optional)
+        try {
+          const cnt = await redisClient.lLen(`mod:${roomId}`);
+          socket.emit('moderationStats', { roomId, flagged: cnt });
+        } catch (e) { /* ignore */ }
       });
 
       socket.on('leave', (roomId) => {
@@ -253,6 +309,15 @@ const io = new Server(server);
         const sender = socket.user.username;
         const payload = { sender, text: clean, ts: Date.now() };
 
+        // moderation check
+        const banned = await getModerationList();
+        if (containsBannedText(clean, banned)) {
+          // flag and notify the sender, do not broadcast or persist to public chat
+          await flagMessage(roomId, payload, 'banned');
+          socket.emit('moderation', { roomId, reason: 'banned' });
+          return;
+        }
+
         // persist
         await saveMessage(roomId, payload);
 
@@ -265,6 +330,23 @@ const io = new Server(server);
 
     const port = process.env.PORT || 3000;
     server.listen(port, () => console.log(`Web server listening on ${port}`));
+  // moderation endpoints (admin)
+  app.get('/api/moderation', authRequired, async (req, res) => {
+    try {
+      const list = await getModerationList();
+      res.json({ banned: list });
+    } catch (err) { res.status(500).json({ error: 'internal' }); }
+  });
+
+  app.patch('/api/moderation', authRequired, async (req, res) => {
+    if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+    const { banned } = req.body;
+    if (!Array.isArray(banned)) return res.status(400).json({ error: 'banned must be array' });
+    const ok = await setModerationList(banned);
+    if (!ok) return res.status(500).json({ error: 'internal' });
+    res.json({ banned });
+  });
+
   } catch (err) {
     console.error('Failed to start Redis adapter or Socket.IO', err);
     process.exit(1);

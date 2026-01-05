@@ -49,6 +49,10 @@ jobs:
         run: npm run test:e2e-chat
         working-directory: ./web
 
+      - name: Run moderation e2e test
+        run: npm run test:moderation
+        working-directory: ./web
+
       - name: Run prefs e2e test
         run: npm run test:prefs
         working-directory: ./web
