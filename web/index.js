@@ -16,12 +16,12 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 // 模拟房间数据库
 const rooms = new Map();
 
-// 默认封面生成（简单渐变色 URL）
+// 默认封面生成（使用占位符图片）
 function generateDefaultCover(roomId) {
-  const hues = [240, 280, 320, 20, 60, 100, 140, 180];
+  // 基于房间 ID 生成伪随机数作为图片编号
   const hash = roomId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const hue = hues[hash % hues.length];
-  return `linear-gradient(135deg, hsl(${hue}, 80%, 50%), hsl(${hue + 40}, 80%, 60%))`;
+  const photoId = (hash % 100) + 1; // picsum.photos ID 1-100
+  return `https://picsum.photos/400/225?random=${photoId}`;
 }
 
 // 初始化示例房间

@@ -65,11 +65,9 @@
         rooms.forEach(room => {
           const card = document.createElement('div');
           card.className = 'room-card';
-          const coverStyle = typeof room.cover === 'string' && room.cover.includes('hsl') 
-            ? `style="background: ${room.cover}"` 
-            : `style="background-image: url('${room.cover || ''}'); background-size: cover; background-position: center;"`;
+          const coverUrl = room.cover && room.cover.startsWith('http') ? room.cover : 'https://via.placeholder.com/400x225?text=No+Cover';
           card.innerHTML = `
-            <div class="room-thumb" ${coverStyle}>
+            <div class="room-thumb" style="background-image: url('${coverUrl}'); background-size: cover; background-position: center;">
               <div class="status-badge ${room.status}">
                 <span>${room.status === 'live' ? '🔴 直播中' : '⭕ 离线'}</span>
               </div>
