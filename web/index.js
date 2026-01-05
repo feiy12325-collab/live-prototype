@@ -244,6 +244,27 @@ const io = new Server(server);
       }
     }
 
+    // ban / unban users
+    async function banUser(username) {
+      try {
+        await redisClient.sAdd('moderation:banned_users', username);
+        return true;
+      } catch (err) { console.error('banUser failed', err); return false; }
+    }
+
+    async function unbanUser(username) {
+      try {
+        await redisClient.sRem('moderation:banned_users', username);
+        return true;
+      } catch (err) { console.error('unbanUser failed', err); return false; }
+    }
+
+    async function isUserBanned(username) {
+      try {
+        return await redisClient.sIsMember('moderation:banned_users', username);
+      } catch (err) { console.error('isUserBanned failed', err); return false; }
+    }
+
     // middleware: if token is provided, verify and attach user to socket
     io.use((socket, next) => {
       const token = socket.handshake && socket.handshake.auth && socket.handshake.auth.token;
@@ -309,6 +330,12 @@ const io = new Server(server);
         const sender = socket.user.username;
         const payload = { sender, text: clean, ts: Date.now() };
 
+        // check if sender is banned
+        if (await isUserBanned(sender)) {
+          socket.emit('error', { type: 'banned', message: 'You are banned from sending messages' });
+          return;
+        }
+
         // moderation check
         const banned = await getModerationList();
         if (containsBannedText(clean, banned)) {
@@ -345,6 +372,60 @@ const io = new Server(server);
     const ok = await setModerationList(banned);
     if (!ok) return res.status(500).json({ error: 'internal' });
     res.json({ banned });
+  });
+
+  // moderation queue: list flagged messages for a room
+  app.get('/api/moderation/queue', authRequired, async (req, res) => {
+    const roomId = req.query.room;
+    if (!roomId) return res.status(400).json({ error: 'room required' });
+    try {
+      const arr = await redisClient.lRange(`mod:${roomId}`, 0, -1);
+      const parsed = arr.map((s, idx) => ({ id: idx, raw: s, entry: JSON.parse(s) }));
+      res.json({ queue: parsed });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'internal' }); }
+  });
+
+  // moderation action (approve/delete/ban/replace)
+  app.post('/api/moderation/action', authRequired, async (req, res) => {
+    if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+    const { roomId, raw, action, replaceText, username } = req.body;
+    if (!roomId || !raw || !action) return res.status(400).json({ error: 'roomId, raw and action required' });
+
+    try {
+      const key = `mod:${roomId}`;
+      // remove the exact raw entry
+      const removed = await redisClient.lRem(key, 1, raw);
+      if (!removed) return res.status(404).json({ error: 'entry not found' });
+
+      if (action === 'approve') {
+        // push original entry to chat
+        const entry = JSON.parse(raw);
+        await redisClient.rPush(`chat:${roomId}`, JSON.stringify({ sender: entry.sender, text: entry.text, ts: Date.now() }));
+        await redisClient.lTrim(`chat:${roomId}`, -200, -1);
+        return res.json({ ok: true });
+      }
+
+      if (action === 'delete') {
+        return res.json({ ok: true });
+      }
+
+      if (action === 'ban') {
+        if (!username) return res.status(400).json({ error: 'username required for ban' });
+        await banUser(username);
+        return res.json({ ok: true });
+      }
+
+      if (action === 'replace') {
+        if (typeof replaceText !== 'string') return res.status(400).json({ error: 'replaceText required' });
+        const entry = JSON.parse(raw);
+        const replaced = { sender: entry.sender, text: replaceText, ts: Date.now(), moderated: true };
+        await redisClient.rPush(`chat:${roomId}`, JSON.stringify(replaced));
+        await redisClient.lTrim(`chat:${roomId}`, -200, -1);
+        return res.json({ ok: true });
+      }
+
+      return res.status(400).json({ error: 'unknown action' });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'internal' }); }
   });
 
   } catch (err) {

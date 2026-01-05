@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Moderation — Live Prototype</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://kit.fontawesome.com/a2d9b3a5f2.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><a href="/rooms.html" style="text-decoration:none;color:inherit">🔧 <strong>Admin</strong></a></div>
+    <div class="room-info">
+      <div class="title">审核面板</div>
+      <div class="sub">仅管理员可使用</div>
+    </div>
+    <div class="actions">
+      <div id="authArea" class="auth"></div>
+      <a href="/rooms.html" class="btn small">返回列表</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section>
+      <div class="card">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input id="roomId" placeholder="room id (e.g., stream1)">
+          <button id="load" class="btn small">Load Queue</button>
+        </div>
+
+        <div id="queue"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">Admin — Live Prototype</footer>
+
+<script>
+  const authArea = document.getElementById('authArea');
+  function updateAuthUI() {
+    const token = localStorage.getItem('token');
+    const username = localStorage.getItem('username');
+    if (token && username) {
+      authArea.innerHTML = `<span class="muted">${username}</span> <button id="logoutBtn" class="btn small outline">退出</button>`;
+      document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token'); localStorage.removeItem('username'); updateAuthUI(); };
+    } else {
+      authArea.innerHTML = `<button id="loginBtn" class="btn small">登录</button>`;
+      document.getElementById('loginBtn').onclick = async ()=>{
+        const name = prompt('请输入管理员用户名 (示例: admin)');
+        if (!name) return; const res = await fetch('/api/auth/login', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: name }) });
+        const j = await res.json(); localStorage.setItem('token', j.token); localStorage.setItem('username', j.username); updateAuthUI();
+      };
+    }
+  }
+  updateAuthUI();
+
+  const loadBtn = document.getElementById('load');
+  const roomInput = document.getElementById('roomId');
+  const queueEl = document.getElementById('queue');
+
+  async function loadQueue() {
+    const room = roomInput.value.trim(); if (!room) return alert('请输入 room id');
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/moderation/queue?room=${room}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return alert('failed to load queue');
+    const j = await res.json();
+    queueEl.innerHTML = '';
+    j.queue.forEach(item => {
+      const d = document.createElement('div'); d.className='msg';
+      const e = item.entry;
+      d.innerHTML = `<div><strong>${e.sender}</strong> <span class="muted">${new Date(e.ts).toLocaleString()}</span></div><div>${e.text}</div>`;
+      const actions = document.createElement('div'); actions.style.marginTop='8px';
+      const btnA = document.createElement('button'); btnA.textContent='Approve'; btnA.className='btn small'; btnA.onclick = ()=>action(room,item.raw,'approve');
+      const btnD = document.createElement('button'); btnD.textContent='Delete'; btnD.className='btn small outline'; btnD.style.marginLeft='8px'; btnD.onclick = ()=>action(room,item.raw,'delete');
+      const btnB = document.createElement('button'); btnB.textContent='Ban User'; btnB.className='btn small warn'; btnB.style.marginLeft='8px'; btnB.onclick = ()=>action(room,item.raw,'ban', { username: e.sender });
+      const btnR = document.createElement('button'); btnR.textContent='Replace & Approve'; btnR.className='btn small'; btnR.style.marginLeft='8px'; btnR.onclick = async ()=>{ const t = prompt('替换为：', e.text); if (t) action(room,item.raw,'replace',{ replaceText:t }); };
+      actions.appendChild(btnA); actions.appendChild(btnD); actions.appendChild(btnB); actions.appendChild(btnR);
+      d.appendChild(actions);
+      queueEl.appendChild(d);
+    });
+  }
+
+  async function action(room, raw, actionName, opts) {
+    const token = localStorage.getItem('token');
+    const body = Object.assign({ roomId: room, raw, action: actionName }, opts || {});
+    const res = await fetch('/api/moderation/action', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    if (!res.ok) { alert('action failed'); return; }
+    alert('ok'); loadQueue();
+  }
+
+  loadBtn.onclick = loadQueue;
+</script>
+</body>
+</html>
