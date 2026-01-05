@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  srs:
+    image: ossrs/srs:4
+    container_name: srs
+    ports:
+      - "1935:1935"   # RTMP
+      - "1985:1985"   # SRS API
+      - "8080:8080"   # HTTP (HLS files)
+    volumes:
+      - ./srs/conf/srs.conf:/usr/local/srs/conf/srs.conf:ro
+      - ./srs/objs:/usr/local/srs/objs
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    container_name: live-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - srs
+    restart: unless-stopped

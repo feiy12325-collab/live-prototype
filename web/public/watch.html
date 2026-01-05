@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>直播观看 — Live Prototype</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://kit.fontawesome.com/a2d9b3a5f2.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><a href="/rooms.html" style="text-decoration:none;color:inherit">🎥 <strong>Live Prototype</strong></a></div>
+    <div class="room-info">
+      <div class="title" id="roomName">直播观看</div>
+      <div class="sub" id="roomStatus"></div>
+    </div>
+    <div class="actions">
+      <div class="viewers"><i class="fas fa-eye"></i> <span id="viewerCount">0</span></div>
+      <a href="/rooms.html" class="btn small">返回列表</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="left">
+      <div class="player-wrap">
+        <video id="video" controls muted playsinline></video>
+        <div class="controls">
+          <input id="stream" placeholder="流名或完整 HLS URL">
+          <button id="play" class="btn">Play</button>
+          <button id="stop" class="btn outline">Stop</button>
+        </div>
+      </div>
+      <div class="meta">
+        <div>HLS 地址： <code id="hlsUrl"></code></div>
+      </div>
+    </section>
+
+    <aside class="right">
+      <div class="chat">
+        <div class="chat-header">聊天 <span id="chatCount" class="muted">(0)</span></div>
+        <div class="messages" id="messages"></div>
+        <div class="chat-input">
+          <input id="msg" placeholder="说点什么...">
+          <button id="send" class="btn small">发送</button>
+        </div>
+      </div>
+
+      <div class="info card">
+        <div><strong>推流地址</strong></div>
+        <div class="mono" id="pushUrl">rtmp://localhost:1935/live/stream</div>
+      </div>
+
+      <div class="info card">
+        <div><strong>说明</strong></div>
+        <div class="muted">使用 OBS 或 ffmpeg 推流；点击 Play 后自动获取房间信息。</div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">&copy; Live Prototype — 本地演示用</footer>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const roomId = params.get('room') || 'stream';
+
+    const roomName = document.getElementById('roomName');
+    const roomStatus = document.getElementById('roomStatus');
+    const viewerCount = document.getElementById('viewerCount');
+    const hlsUrl = document.getElementById('hlsUrl');
+    const pushUrl = document.getElementById('pushUrl');
+
+    const playBtn = document.getElementById('play');
+    const stopBtn = document.getElementById('stop');
+    const input = document.getElementById('stream');
+    const video = document.getElementById('video');
+
+    const messagesEl = document.getElementById('messages');
+    const msgInput = document.getElementById('msg');
+    const sendBtn = document.getElementById('send');
+    const chatCount = document.getElementById('chatCount');
+
+    let hls = null;
+    let viewers = 0;
+    let room = null;
+
+    async function loadRoom() {
+      try {
+        const res = await fetch(`/api/rooms/${roomId}`);
+        if (!res.ok) throw new Error('Room not found');
+        room = await res.json();
+        
+        roomName.textContent = room.name;
+        roomStatus.textContent = room.status === 'live' ? '🔴 直播中' : '⭕ 离线';
+        viewerCount.textContent = room.viewers;
+        hlsUrl.textContent = room.url;
+        pushUrl.textContent = `rtmp://localhost:1935/live/${room.id}`;
+        input.value = room.id;
+      } catch (err) {
+        console.error('Failed to load room', err);
+        roomName.textContent = '房间不存在';
+      }
+    }
+
+    function appendMessage(sender, text) {
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.innerHTML = `<span class="sender">${sender}</span><span class="text">${text}</span>`;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      chatCount.textContent = `(${messagesEl.children.length})`;
+    }
+
+    appendMessage('系统', `欢迎进入 "${roomId}" 直播间！`);
+    appendMessage('提示', '点击 Play 开始观看直播。');
+
+    loadRoom();
+
+    playBtn.onclick = () => {
+      const val = input.value.trim() || roomId;
+      const url = val.startsWith('http') ? val : `http://localhost:8080/live/${val}.m3u8`;
+
+      if (hls) { hls.destroy(); hls = null; }
+
+      if (Hls.isSupported()) {
+        hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, function() { video.play().catch(()=>{}); });
+        hls.on(Hls.Events.ERROR, function(event, data){ console.warn('HLS error', data); });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        video.addEventListener('loadedmetadata', function() { video.play().catch(()=>{}); });
+      } else {
+        alert('HLS not supported');
+        return;
+      }
+
+      viewers++; viewerCount.textContent = viewers;
+      appendMessage('系统', `尝试播放： ${url}`);
+    };
+
+    stopBtn.onclick = () => {
+      if (hls) { hls.destroy(); hls = null; }
+      video.pause(); video.removeAttribute('src'); video.load();
+      appendMessage('系统', '已停止播放');
+    };
+
+    sendBtn.onclick = () => {
+      const text = msgInput.value.trim();
+      if (!text) return;
+      appendMessage('你', text);
+      msgInput.value = '';
+    };
+
+    msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendBtn.click(); });
+  </script>
+</body>
+</html>

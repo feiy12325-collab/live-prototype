@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>直播列表 — Live Prototype</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://kit.fontawesome.com/a2d9b3a5f2.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎥 <strong>Live Prototype</strong></div>
+    <div class="room-info">
+      <div class="title">直播列表</div>
+      <div class="sub">浏览所有直播房间</div>
+    </div>
+    <div class="actions">
+      <button id="createRoomBtn" class="btn small">+ 创建房间</button>
+    </div>
+  </header>
+
+  <main class="container-full">
+    <section class="list-section">
+      <h2>🔴 正在直播</h2>
+      <div id="liveRooms" class="rooms-grid"></div>
+
+      <h2 style="margin-top:40px">⭕ 离线房间</h2>
+      <div id="offlineRooms" class="rooms-grid"></div>
+    </section>
+  </main>
+
+  <footer class="footer">&copy; Live Prototype — 本地演示用</footer>
+
+  <!-- Modal for create room -->
+  <div id="createModal" style="display:none" class="modal">
+    <div class="modal-content">
+      <h3>创建新房间</h3>
+      <input id="newRoomId" placeholder="房间 ID（例如：mystream）" />
+      <input id="newRoomName" placeholder="房间名称（例如：我的直播）" />
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button id="cancelBtn" class="btn outline" style="flex:1">取消</button>
+        <button id="confirmBtn" class="btn" style="flex:1">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const liveRooms = document.getElementById('liveRooms');
+    const offlineRooms = document.getElementById('offlineRooms');
+    const createRoomBtn = document.getElementById('createRoomBtn');
+    const createModal = document.getElementById('createModal');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const confirmBtn = document.getElementById('confirmBtn');
+    const newRoomId = document.getElementById('newRoomId');
+    const newRoomName = document.getElementById('newRoomName');
+
+    async function loadRooms() {
+      try {
+        const res = await fetch('/api/rooms');
+        const rooms = await res.json();
+        liveRooms.innerHTML = '';
+        offlineRooms.innerHTML = '';
+
+        rooms.forEach(room => {
+          const card = document.createElement('div');
+          card.className = 'room-card';
+          card.innerHTML = `
+            <div class="room-thumb" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)">
+              <div class="status-badge ${room.status}">
+                <span>${room.status === 'live' ? '🔴 直播中' : '⭕ 离线'}</span>
+              </div>
+            </div>
+            <div class="room-meta">
+              <div class="room-name">${room.name}</div>
+              <div class="room-viewers"><i class="fas fa-eye"></i> ${room.viewers} 人</div>
+            </div>
+          `;
+          card.style.cursor = 'pointer';
+          card.onclick = () => { window.location.href = `/watch.html?room=${room.id}`; };
+
+          if (room.status === 'live') liveRooms.appendChild(card);
+          else offlineRooms.appendChild(card);
+        });
+      } catch (err) {
+        console.error('Failed to load rooms', err);
+      }
+    }
+
+    createRoomBtn.onclick = () => { createModal.style.display = 'flex'; };
+    cancelBtn.onclick = () => { createModal.style.display = 'none'; };
+
+    confirmBtn.onclick = async () => {
+      const id = newRoomId.value.trim();
+      const name = newRoomName.value.trim();
+      if (!id || !name) { alert('请输入房间 ID 和名称'); return; }
+
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, name })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        createModal.style.display = 'none';
+        newRoomId.value = '';
+        newRoomName.value = '';
+        loadRooms();
+        alert(`房间 "${name}" 创建成功！`);
+      } catch (err) {
+        alert(`创建失败: ${err.message}`);
+      }
+    };
+
+    // auto refresh every 5s
+    loadRooms();
+    setInterval(loadRooms, 5000);
+  </script>
+</body>
+</html>
