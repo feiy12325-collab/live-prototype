@@ -10,7 +10,12 @@ services:
       - "8080:8080"   # HTTP (HLS files)
     volumes:
       - ./srs/conf/srs.conf:/usr/local/srs/conf/srs.conf:ro
-      - ./srs/objs:/usr/local/srs/objs
+      - ./srs/objs/nginx/html:/usr/local/srs/objs/nginx/html
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: live-redis
     restart: unless-stopped
 
   web:
@@ -20,4 +25,8 @@ services:
       - "3000:3000"
     depends_on:
       - srs
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
     restart: unless-stopped

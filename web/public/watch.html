@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <script src="https://kit.fontawesome.com/a2d9b3a5f2.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -17,6 +18,13 @@
     </div>
     <div class="actions">
       <div class="viewers"><i class="fas fa-eye"></i> <span id="viewerCount">0</span></div>
+      <div id="authArea" class="auth"></div>
+      <div id="langArea" class="lang">
+        <select id="langSelect" aria-label="语言">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
       <a href="/rooms.html" class="btn small">返回列表</a>
     </div>
   </header>
@@ -116,6 +124,99 @@
 
     loadRoom();
 
+    // Authentication helpers (simple)
+    const authArea = document.getElementById('authArea');
+    function updateAuthUI() {
+      const token = localStorage.getItem('token');
+      const username = localStorage.getItem('username');
+      if (token && username) {
+        authArea.innerHTML = `<span class="muted">${username}</span> <button id="logoutBtn" class="btn small outline">退出</button>`;
+        document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token'); localStorage.removeItem('username'); if (socket) { socket.disconnect(); } connectSocket(); updateAuthUI(); };
+      } else {
+        authArea.innerHTML = `<button id="loginBtn" class="btn small">登录</button>`;
+        document.getElementById('loginBtn').onclick = doLogin;
+      }
+    }
+
+    async function doLogin() {
+      const name = prompt('请输入用户名 (示例: alice)');
+      if (!name) return;
+      try {
+        const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: name }) });
+        if (!res.ok) throw new Error('login failed');
+        const j = await res.json();
+        localStorage.setItem('token', j.token);
+        localStorage.setItem('username', j.username);
+
+        // apply prefs from server if present; otherwise keep local
+        if (j.prefs && j.prefs.lang) {
+          localStorage.setItem('lang', j.prefs.lang);
+          document.getElementById('langSelect').value = j.prefs.lang;
+        } else {
+          const localLang = localStorage.getItem('lang');
+          if (localLang) {
+            // save local pref to server
+            await saveLangToServer(localLang);
+            document.getElementById('langSelect').value = localLang;
+          }
+        }
+
+        updateAuthUI();
+        connectSocket();
+      } catch (err) {
+        alert('登录失败');
+        console.error(err);
+      }
+    }
+
+    // save language pref to server (requires login)
+    async function saveLangToServer(lang) {
+      const token = localStorage.getItem('token');
+      if (!token) return false;
+      try {
+        const res = await fetch('/api/users/me', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return false;
+        const j = await res.json();
+        const prefs = Object.assign({}, j.prefs || {}, { lang });
+        const pRes = await fetch('/api/users/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ prefs }) });
+        return pRes.ok;
+      } catch (err) { console.error('saveLangToServer failed', err); return false; }
+    }
+
+    // socket connection (reconnects with token if present)
+    let socket = null;
+    function connectSocket() {
+      if (socket) { try { socket.disconnect(); } catch(e){} }
+      const token = localStorage.getItem('token');
+      socket = io({ auth: { token } });
+
+      socket.on('connect', () => { console.log('socket connected'); socket.emit('join', roomId); });
+      socket.on('connect_error', (err) => { console.error('connect_error', err); if (err && err.message) { appendMessage('系统', `Socket error: ${err.message}`); } });
+
+      socket.on('viewer', (data) => { if (data.roomId === roomId) viewerCount.textContent = data.viewers; });
+      socket.on('chat', (msg) => { appendMessage(msg.sender, msg.text); });
+      socket.on('chatHistory', (arr) => { messagesEl.innerHTML = ''; arr.forEach(m => appendMessage(m.sender, m.text)); });
+      socket.on('error', (err) => { if (err && err.type === 'auth') { appendMessage('系统', err.message); } else { console.error('socket error', err); } });
+    }
+
+    // language selector behavior
+    const langSelect = document.getElementById('langSelect');
+    function applyLangUI(lang) {
+      // basic demo: set document lang and small system messages
+      document.documentElement.lang = lang === 'en' ? 'en' : 'zh';
+    }
+    langSelect.value = localStorage.getItem('lang') || 'zh';
+    applyLangUI(langSelect.value);
+    langSelect.addEventListener('change', async (e) => {
+      const v = e.target.value;
+      localStorage.setItem('lang', v);
+      applyLangUI(v);
+      await saveLangToServer(v);
+    });
+
+    updateAuthUI();
+    connectSocket();
+
     playBtn.onclick = () => {
       const val = input.value.trim() || roomId;
       const url = val.startsWith('http') ? val : `http://localhost:8080/live/${val}.m3u8`;
@@ -136,7 +237,6 @@
         return;
       }
 
-      viewers++; viewerCount.textContent = viewers;
       appendMessage('系统', `尝试播放： ${url}`);
     };
 
@@ -149,7 +249,12 @@
     sendBtn.onclick = () => {
       const text = msgInput.value.trim();
       if (!text) return;
-      appendMessage('你', text);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        if (confirm('发送消息需要登录，是否现在登录？')) doLogin();
+        return;
+      }
+      socket.emit('message', { roomId, text });
       msgInput.value = '';
     };
 
