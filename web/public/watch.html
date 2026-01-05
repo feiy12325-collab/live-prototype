@@ -31,6 +31,9 @@
 
   <main class="container">
     <section class="left">
+      <div class="room-cover-wrap" id="coverWrap" style="display:none;margin-bottom:12px;">
+        <img id="roomCover" style="width:100%;height:auto;border-radius:8px;object-fit:cover;">
+      </div>
       <div class="player-wrap">
         <video id="video" controls muted playsinline></video>
         <div class="controls">
@@ -104,6 +107,15 @@
         hlsUrl.textContent = room.url;
         pushUrl.textContent = `rtmp://localhost:1935/live/${room.id}`;
         input.value = room.id;
+
+        // 显示房间封面
+        if (room.cover) {
+          document.getElementById('coverWrap').style.display = 'block';
+          document.getElementById('roomCover').src = room.cover;
+          document.getElementById('roomCover').onerror = () => {
+            document.getElementById('coverWrap').style.display = 'none';
+          };
+        }
       } catch (err) {
         console.error('Failed to load room', err);
         roomName.textContent = '房间不存在';
